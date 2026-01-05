@@ -8,7 +8,7 @@ A modern web application for creating events and managing RSVPs, inspired by Par
 - 📅 **Event Management**: Set date, time, location, and host information
 - 👥 **RSVP System**: Guests can RSVP with "Going", "Maybe", or "Can't Go"
 - 📊 **Guest Tracking**: View real-time RSVP statistics and guest lists
-- 🎨 **Multiple Themes**: Choose from Classic, Eclectic, Fancy, Elegant, or Simple themes
+- 🎨 **Multiple Themes**: Choose from Base, Mono, Cosmic Night, Soft Pop, Neo Brutalism, Vintage Paper, Modern Minimal, Bubblegum, or Violet Bloom themes
 - 📱 **Responsive Design**: Works seamlessly on desktop and mobile devices
 - 🔗 **Share Events**: Share event links with invited guests
 - 💾 **Local Storage**: All data is saved locally in your browser

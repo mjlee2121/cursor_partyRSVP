@@ -1,40 +1,177 @@
 // State management
-let events = JSON.parse(localStorage.getItem('events')) || [];
+let events = getEvents();
 let currentEventId = null;
 let selectedResponse = null;
+let currentEventFilter = 'my-events'; // 'my-events' or 'invited-events'
 
 // DOM Elements
+const loginPage = document.getElementById('login-page');
+const signupPage = document.getElementById('signup-page');
 const homePage = document.getElementById('home-page');
 const createPage = document.getElementById('create-page');
 const eventPage = document.getElementById('event-page');
 
-// Navigation
-document.getElementById('nav-home').addEventListener('click', (e) => {
-    e.preventDefault();
-    showPage('home');
+// Initialize on page load
+window.addEventListener('DOMContentLoaded', () => {
+    checkAuthAndRedirect();
+    setupEventListeners();
+    updateNavigation();
 });
-document.getElementById('nav-create').addEventListener('click', (e) => {
-    e.preventDefault();
-    showPage('create');
-});
-document.getElementById('nav-home-brand').addEventListener('click', (e) => {
-    e.preventDefault();
-    showPage('home');
-});
-document.getElementById('create-event-btn').addEventListener('click', () => showPage('create'));
-document.getElementById('cancel-create').addEventListener('click', () => {
-    clearCreateForm();
-    showPage('home');
-});
-document.getElementById('back-to-home').addEventListener('click', () => showPage('home'));
+
+// Check authentication and redirect
+function checkAuthAndRedirect() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const eventId = urlParams.get('event');
+    
+    const currentUser = getCurrentUser();
+    
+    if (!currentUser) {
+        // Not logged in - show login page
+        showPage('login');
+    } else {
+        // Logged in - show appropriate page
+        if (eventId) {
+            showEvent(eventId);
+        } else {
+            showPage('home');
+            renderEventList();
+        }
+    }
+}
+
+// Setup all event listeners
+function setupEventListeners() {
+    // Navigation
+    document.getElementById('nav-home').addEventListener('click', (e) => {
+        e.preventDefault();
+        if (isLoggedIn()) showPage('home');
+    });
+    document.getElementById('nav-create').addEventListener('click', (e) => {
+        e.preventDefault();
+        if (isLoggedIn()) showPage('create');
+    });
+    document.getElementById('nav-login').addEventListener('click', (e) => {
+        e.preventDefault();
+        showPage('login');
+    });
+    document.getElementById('nav-logout').addEventListener('click', (e) => {
+        e.preventDefault();
+        handleLogout();
+    });
+    document.getElementById('nav-home-brand').addEventListener('click', (e) => {
+        e.preventDefault();
+        if (isLoggedIn()) showPage('home');
+    });
+    
+    // Login/Signup navigation
+    document.getElementById('switch-to-signup').addEventListener('click', (e) => {
+        e.preventDefault();
+        showPage('signup');
+    });
+    document.getElementById('switch-to-login').addEventListener('click', (e) => {
+        e.preventDefault();
+        showPage('login');
+    });
+    
+    // Login form
+    document.getElementById('login-form').addEventListener('submit', handleLogin);
+    
+    // Signup form
+    document.getElementById('signup-form').addEventListener('submit', handleSignup);
+    
+    // Event creation
+    document.getElementById('save-event').addEventListener('click', createEvent);
+    document.getElementById('create-event-btn').addEventListener('click', () => {
+        if (isLoggedIn()) showPage('create');
+    });
+    document.getElementById('cancel-create').addEventListener('click', () => {
+        clearCreateForm();
+        showPage('home');
+    });
+    document.getElementById('back-to-home').addEventListener('click', () => showPage('home'));
+    
+    // RSVP
+    document.querySelectorAll('.rsvp-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.rsvp-btn').forEach(b => {
+                b.classList.remove('selected');
+                b.classList.remove('active');
+            });
+            this.classList.add('selected');
+            this.classList.add('active');
+            selectedResponse = this.dataset.response;
+        });
+    });
+    document.getElementById('submit-rsvp').addEventListener('click', submitRSVP);
+    
+    // Share event
+    document.getElementById('share-event').addEventListener('click', () => {
+        const event = events.find(e => e.id === currentEventId);
+        if (!event) return;
+
+        const url = `${window.location.origin}${window.location.pathname}?event=${currentEventId}`;
+        
+        if (navigator.share) {
+            navigator.share({
+                title: event.title,
+                text: `You're invited to ${event.title}!`,
+                url: url
+            });
+        } else {
+            navigator.clipboard.writeText(url).then(() => {
+                alert('Event link copied to clipboard!');
+            });
+        }
+    });
+    
+    // Event filter tabs
+    const myEventsTab = document.getElementById('my-events-tab');
+    const invitedEventsTab = document.getElementById('invited-events-tab');
+    
+    if (myEventsTab) {
+        myEventsTab.addEventListener('click', () => {
+            currentEventFilter = 'my-events';
+            renderEventList();
+        });
+    }
+    
+    if (invitedEventsTab) {
+        invitedEventsTab.addEventListener('click', () => {
+            currentEventFilter = 'invited-events';
+            renderEventList();
+        });
+    }
+    
+    // Theme selection
+    document.querySelectorAll('.theme-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.theme-btn').forEach(b => {
+                b.classList.remove('active');
+                b.classList.remove('btn-primary');
+                b.classList.add('btn-outline-primary');
+            });
+            this.classList.add('active');
+            this.classList.remove('btn-outline-primary');
+            this.classList.add('btn-primary');
+        });
+    });
+}
 
 // Page navigation
 function showPage(page) {
+    // Hide all pages
+    loginPage.classList.remove('active');
+    signupPage.classList.remove('active');
     homePage.classList.remove('active');
     createPage.classList.remove('active');
     eventPage.classList.remove('active');
 
-    if (page === 'home') {
+    // Show selected page
+    if (page === 'login') {
+        loginPage.classList.add('active');
+    } else if (page === 'signup') {
+        signupPage.classList.add('active');
+    } else if (page === 'home') {
         homePage.classList.add('active');
         renderEventList();
     } else if (page === 'create') {
@@ -44,17 +181,95 @@ function showPage(page) {
     }
 }
 
-// Event creation
-document.getElementById('save-event').addEventListener('click', createEvent);
+// Update navigation based on login status
+function updateNavigation() {
+    const currentUser = getCurrentUser();
+    const loginItem = document.getElementById('nav-login-item');
+    const logoutItem = document.getElementById('nav-logout-item');
+    const userItem = document.getElementById('nav-user-item');
+    const userName = document.getElementById('nav-user-name');
+    const createItem = document.getElementById('nav-create-item');
+    const filterTabs = document.getElementById('event-filter-tabs');
+    
+    if (currentUser) {
+        // Logged in
+        if (loginItem) loginItem.classList.add('d-none');
+        if (logoutItem) logoutItem.classList.remove('d-none');
+        if (userItem) userItem.classList.remove('d-none');
+        if (userName) userName.textContent = currentUser.name;
+        if (filterTabs) filterTabs.classList.remove('d-none');
+    } else {
+        // Not logged in
+        if (loginItem) loginItem.classList.remove('d-none');
+        if (logoutItem) logoutItem.classList.add('d-none');
+        if (userItem) userItem.classList.add('d-none');
+        if (filterTabs) filterTabs.classList.add('d-none');
+    }
+}
 
+// Handle login
+function handleLogin(e) {
+    e.preventDefault();
+    const email = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-password').value;
+    
+    const result = login(email, password);
+    
+    if (result.success) {
+        updateNavigation();
+        showPage('home');
+        renderEventList();
+    } else {
+        alert(result.message || 'Login failed');
+    }
+}
+
+// Handle signup
+function handleSignup(e) {
+    e.preventDefault();
+    const name = document.getElementById('signup-name').value.trim();
+    const email = document.getElementById('signup-email').value.trim();
+    const password = document.getElementById('signup-password').value;
+    
+    if (password.length < 6) {
+        alert('Password must be at least 6 characters');
+        return;
+    }
+    
+    const result = signUp(name, email, password);
+    
+    if (result.success) {
+        updateNavigation();
+        showPage('home');
+        renderEventList();
+    } else {
+        alert(result.message || 'Signup failed');
+    }
+}
+
+// Handle logout
+function handleLogout() {
+    logout();
+    updateNavigation();
+    showPage('login');
+}
+
+// Event creation
 function createEvent() {
+    const currentUser = getCurrentUser();
+    if (!currentUser) {
+        alert('Please login to create events');
+        showPage('login');
+        return;
+    }
+    
     const title = document.getElementById('event-title').value || 'Untitled Event';
     const date = document.getElementById('event-date').value;
     const location = document.getElementById('event-location').value;
     const host = document.getElementById('event-host').value;
     const description = document.getElementById('event-description').value;
     const guestEmails = document.getElementById('guest-emails').value;
-    const theme = document.querySelector('.theme-btn.active')?.dataset.theme || 'classic';
+    const theme = document.querySelector('.theme-btn.active')?.dataset.theme || 'base';
 
     if (!date) {
         alert('Please select a date and time for your event');
@@ -66,16 +281,20 @@ function createEvent() {
         title,
         date,
         location,
-        host,
+        host: host || currentUser.name,
         description,
         guestEmails: guestEmails.split(',').map(email => email.trim()).filter(Boolean),
+        invitedUsers: guestEmails.split(',').map(email => email.trim().toLowerCase()).filter(Boolean),
         theme,
+        ownerId: currentUser.id,
+        ownerEmail: currentUser.email,
         rsvps: [],
         createdAt: new Date().toISOString()
     };
 
+    events = getEvents();
     events.push(event);
-    localStorage.setItem('events', JSON.stringify(events));
+    saveEvents(events);
     
     clearCreateForm();
     showEvent(event.id);
@@ -95,45 +314,46 @@ function clearCreateForm() {
         btn.classList.remove('btn-primary');
         btn.classList.add('btn-outline-primary');
     });
-    const classicBtn = document.querySelector('.theme-btn[data-theme="classic"]');
-    if (classicBtn) {
-        classicBtn.classList.add('active');
-        classicBtn.classList.remove('btn-outline-primary');
-        classicBtn.classList.add('btn-primary');
+    const baseBtn = document.querySelector('.theme-btn[data-theme="base"]');
+    if (baseBtn) {
+        baseBtn.classList.add('active');
+        baseBtn.classList.remove('btn-outline-primary');
+        baseBtn.classList.add('btn-primary');
     }
 }
 
-// Theme selection
-document.querySelectorAll('.theme-btn').forEach(btn => {
-    btn.addEventListener('click', function() {
-        document.querySelectorAll('.theme-btn').forEach(b => {
-            b.classList.remove('active');
-            b.classList.remove('btn-primary');
-            b.classList.add('btn-outline-primary');
-        });
-        this.classList.add('active');
-        this.classList.remove('btn-outline-primary');
-        this.classList.add('btn-primary');
-    });
-});
-
 // Render event list
 function renderEventList() {
-    const eventList = document.getElementById('event-list');
+    const currentUser = getCurrentUser();
+    if (!currentUser) return;
     
-    if (events.length === 0) {
+    const eventList = document.getElementById('event-list');
+    events = getEvents();
+    
+    let filteredEvents = [];
+    
+    if (currentEventFilter === 'my-events') {
+        filteredEvents = getMyEvents(currentUser.id);
+    } else {
+        filteredEvents = getInvitedEvents(currentUser.email);
+    }
+    
+    if (filteredEvents.length === 0) {
+        const emptyMessage = currentEventFilter === 'my-events' 
+            ? 'No events created yet. Create your first event!'
+            : 'No invited events yet.';
         eventList.innerHTML = `
             <div class="col-12">
                 <div class="alert alert-light text-center py-5">
                     <i class="bi bi-calendar-x display-4 text-muted mb-3 d-block"></i>
-                    <p class="mb-0 text-muted">No events yet. Create your first event!</p>
+                    <p class="mb-0 text-muted">${emptyMessage}</p>
                 </div>
             </div>
         `;
         return;
     }
 
-    eventList.innerHTML = events.map(event => {
+    eventList.innerHTML = filteredEvents.map(event => {
         const rsvpCounts = getRSVPCounts(event.rsvps);
         const formattedDate = formatDate(event.date);
         
@@ -162,6 +382,7 @@ function renderEventList() {
 // Show event
 window.showEvent = function(eventId) {
     currentEventId = eventId;
+    events = getEvents();
     const event = events.find(e => e.id === eventId);
     
     if (!event) {
@@ -192,21 +413,7 @@ window.showEvent = function(eventId) {
     showPage('event');
 };
 
-// RSVP handling
-    document.querySelectorAll('.rsvp-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            document.querySelectorAll('.rsvp-btn').forEach(b => {
-                b.classList.remove('selected');
-                b.classList.remove('active');
-            });
-            this.classList.add('selected');
-            this.classList.add('active');
-            selectedResponse = this.dataset.response;
-        });
-    });
-
-document.getElementById('submit-rsvp').addEventListener('click', submitRSVP);
-
+// Submit RSVP
 function submitRSVP() {
     const name = document.getElementById('guest-name').value.trim();
     const email = document.getElementById('guest-email').value.trim();
@@ -226,6 +433,7 @@ function submitRSVP() {
         return;
     }
 
+    events = getEvents();
     const event = events.find(e => e.id === currentEventId);
     if (!event) return;
 
@@ -240,7 +448,7 @@ function submitRSVP() {
         submittedAt: new Date().toISOString()
     });
 
-    localStorage.setItem('events', JSON.stringify(events));
+    saveEvents(events);
     
     // Clear form
     document.getElementById('guest-name').value = '';
@@ -328,43 +536,3 @@ function formatDate(dateString) {
 function isValidEmail(email) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
-
-// Share event
-document.getElementById('share-event').addEventListener('click', () => {
-    const event = events.find(e => e.id === currentEventId);
-    if (!event) return;
-
-    const url = `${window.location.origin}${window.location.pathname}?event=${currentEventId}`;
-    
-    if (navigator.share) {
-        navigator.share({
-            title: event.title,
-            text: `You're invited to ${event.title}!`,
-            url: url
-        });
-    } else {
-        navigator.clipboard.writeText(url).then(() => {
-            alert('Event link copied to clipboard!');
-        });
-    }
-});
-
-// Check for event ID in URL
-window.addEventListener('DOMContentLoaded', () => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const eventId = urlParams.get('event');
-    
-    if (eventId) {
-        showEvent(eventId);
-    } else {
-        showPage('home');
-        renderEventList();
-    }
-});
-
-// Initialize
-if (events.length > 0) {
-    renderEventList();
-}
-
-
